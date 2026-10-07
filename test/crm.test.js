@@ -2,6 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../src/db.js';
 import { Crm } from '../src/crm.js';
+import { genericSchema } from './fixtures.js';
 import { ensureDefaultSchema } from '../src/setup.js';
 import { exportCsv, importCsv } from '../src/transfer.js';
 import { parseCsv, toCsv } from '../src/csv.js';
@@ -9,16 +10,22 @@ import { parseCsv, toCsv } from '../src/csv.js';
 let crm;
 beforeEach(() => {
   crm = new Crm(openDb(':memory:'));
-  ensureDefaultSchema(crm);
+  genericSchema(crm);
 });
 
-test('default schema has companies, contacts and deals', () => {
-  const slugs = crm.listObjects().map((o) => o.slug);
-  assert.deepEqual(slugs, ['companies', 'contacts', 'deals']);
-  const deals = crm.getObject('deals');
-  assert.equal(deals.board_field, 'stage');
-  assert.equal(deals.value_field, 'value');
-  assert.equal(ensureDefaultSchema(crm), false, 'does not re-seed');
+test('starter template is set up for a cybersecurity-focused consultancy', () => {
+  const fresh = new Crm(openDb(':memory:'));
+  assert.equal(ensureDefaultSchema(fresh), true);
+  assert.deepEqual(fresh.listObjects().map((o) => o.slug), ['companies', 'contacts', 'deals']);
+  const contacts = fresh.getObject('contacts');
+  assert.equal(contacts.board_field, 'lifecycle_stage');
+  assert.equal(contacts.won_stage, 'Client');
+  assert.deepEqual(contacts.exit_stages, ['Former client', 'Disqualified']);
+  const deals = fresh.getObject('deals');
+  assert.deepEqual([deals.board_field, deals.value_field, deals.won_stage], ['stage', 'value', 'Won']);
+  assert.ok(fresh.getObject('companies').fields.some((f) => f.key === 'security_category'));
+  assert.deepEqual(fresh.settingList('allowed_origins'), ['https://christinecastro.com', 'https://www.christinecastro.com']);
+  assert.equal(ensureDefaultSchema(fresh), false, 'does not re-seed');
 });
 
 test('records are validated and coerced against field types', () => {

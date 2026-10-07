@@ -1,5 +1,6 @@
 import { parseCsv, toCsv } from './csv.js';
 import { HttpError } from './crm.js';
+import { transaction } from './db.js';
 
 const PAGE = 1000;
 
@@ -27,18 +28,32 @@ export function exportCsv(crm, objectSlug) {
   return toCsv(rows);
 }
 
+// Columns that describe where a record came from rather than a field on it.
+const TOUCH_COLUMNS = {
+  channel: 'channel', 'lead source': 'lead_source',
+  source: 'source', utm_source: 'source', 'utm source': 'source',
+  medium: 'medium', utm_medium: 'medium', 'utm medium': 'medium',
+  campaign: 'campaign', utm_campaign: 'campaign', 'utm campaign': 'campaign',
+  'touch date': 'occurred_at', 'source date': 'occurred_at', 'first touch date': 'occurred_at',
+  'touch note': 'note',
+};
+
 /**
  * Imports CSV rows as new records. Columns are matched to fields by label or
- * key (case-insensitive); unknown columns are ignored. Relation columns may
- * hold a record id or the related record's name.
+ * key (case-insensitive). Relation columns may hold a record id or the related
+ * record's name. With `attribution`, columns like Channel, Lead source, UTM
+ * source/medium/campaign and Touch date become a touchpoint on each record.
+ * Other columns are ignored.
  */
-export function importCsv(crm, objectSlug, text) {
+export function importCsv(crm, objectSlug, text, attribution) {
   const o = crm.getObject(objectSlug);
   const [header, ...rows] = parseCsv(text);
   if (!header) throw new HttpError(400, 'The CSV file is empty');
 
   const norm = (s) => String(s).trim().toLowerCase();
   const columns = header.map((h) => o.fields.find((f) => norm(f.label) === norm(h) || f.key === norm(h)) ?? null);
+  const touchColumns = attribution ? header.map((h, c) => (columns[c] ? null : TOUCH_COLUMNS[norm(h)] ?? null)) : [];
+  const channels = new Map(crm.settingList('channels').map((ch) => [norm(ch), ch]));
   if (!columns.some(Boolean)) {
     throw new HttpError(400, `No CSV columns match ${o.name} fields (${o.fields.map((f) => f.label).join(', ')})`);
   }
@@ -66,17 +81,34 @@ export function importCsv(crm, objectSlug, text) {
   const errors = [];
   rows.forEach((row, i) => {
     try {
-      const data = {};
-      columns.forEach((f, c) => {
-        if (!f) return;
-        const value = row[c] ?? '';
-        data[f.key] = f.type === 'relation' && value.trim() ? resolveRelation(f, value) : value;
-      });
-      crm.createRecord(o.id, data);
+      transaction(crm.db, () => importRow(row));
       created++;
     } catch (err) {
       errors.push({ row: i + 2, error: err.message });
     }
   });
-  return { created, errors, ignored_columns: header.filter((_, c) => !columns[c]) };
+  return { created, errors, ignored_columns: header.filter((_, c) => !columns[c] && !touchColumns[c]) };
+
+  function importRow(row) {
+    const data = {};
+    columns.forEach((f, c) => {
+      if (!f) return;
+      const value = row[c] ?? '';
+      data[f.key] = f.type === 'relation' && value.trim() ? resolveRelation(f, value) : value;
+    });
+    const record = crm.createRecord(o.id, data);
+    const touch = {};
+    touchColumns.forEach((key, c) => { if (key && row[c]?.trim()) touch[key] = row[c].trim(); });
+    if (touch.lead_source) {
+      // A known channel name goes in channel; anything else (a person, an event) is the source.
+      const known = channels.get(norm(touch.lead_source));
+      if (known && !touch.channel) touch.channel = known;
+      else if (!touch.source) touch.source = touch.lead_source;
+      delete touch.lead_source;
+    }
+    if (touch.channel) touch.channel = channels.get(norm(touch.channel)) ?? touch.channel;
+    if (Object.keys(touch).some((k) => k !== 'occurred_at' && k !== 'note')) {
+      attribution.addTouchpoint(record.id, touch, { origin: 'import' });
+    }
+  }
 }

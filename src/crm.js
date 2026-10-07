@@ -8,10 +8,35 @@ export const ACTIVITY_TYPES = ['note', 'task', 'call', 'email', 'meeting'];
 
 const SEARCHABLE_TYPES = new Set(['text', 'textarea', 'email', 'phone', 'url', 'select']);
 
+export const DEFAULT_CHANNELS = [
+  'Organic search', 'Paid search', 'AI assistants', 'Organic social', 'Paid social',
+  'Email', 'Referral', 'Investor / VC network', 'Partner', 'Events', 'Podcast',
+  'Content / Webinar', 'Outbound', 'Website referral', 'Direct', 'Other',
+];
+
 export const DEFAULT_SETTINGS = {
   business_name: 'My Business',
   accent_color: '#4f46e5',
   currency: 'USD',
+  // Attribution: which record type holds people (and their touchpoints), and
+  // which holds revenue. Either may be blank to switch that part off.
+  contact_object: 'contacts',
+  deal_object: 'deals',
+  channels: DEFAULT_CHANNELS.join('\n'),
+  // Website origins allowed to send form captures, one per line.
+  allowed_origins: '',
+  // Lifecycle stage given to people captured from a website form.
+  lead_stage: 'Lead',
+};
+
+const SETTING_RULES = {
+  accent_color: (v) => /^#[0-9a-f]{6}$/i.test(v) || 'must be a hex color like #4f46e5',
+  currency: (v) => /^[A-Z]{3}$/.test(v) || 'must be a 3-letter ISO code like USD',
+  business_name: (v) => !!v || 'cannot be empty',
+  channels: (v) => !!v || 'needs at least one channel',
+  allowed_origins: (v) => v.split('\n').filter(Boolean).every((o) => {
+    try { const u = new URL(o); return ['http:', 'https:'].includes(u.protocol) && u.origin === o; } catch { return false; }
+  }) || 'must be origins like https://example.com (no path or trailing slash), one per line',
 };
 
 export class HttpError extends Error {
@@ -51,26 +76,44 @@ export class Crm {
   getSettings() {
     const rows = this.db.prepare('SELECT key, value FROM settings').all();
     const settings = { ...DEFAULT_SETTINGS };
-    for (const { key, value } of rows) settings[key] = value;
+    for (const { key, value } of rows) if (Object.hasOwn(DEFAULT_SETTINGS, key)) settings[key] = value;
     return settings;
+  }
+
+  /** Lists stored one-per-line, e.g. channels and allowed_origins. */
+  settingList(key) {
+    return this.getSettings()[key].split('\n').map((v) => v.trim()).filter(Boolean);
+  }
+
+  /** Internal values (like the webhook key) that never go out through getSettings(). */
+  getSecret(key) {
+    return this.db.prepare('SELECT value FROM settings WHERE key = ?').get(`secret.${key}`)?.value ?? null;
+  }
+
+  setSecret(key, value) {
+    this.db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(`secret.${key}`, value);
   }
 
   updateSettings(patch) {
     const stmt = this.db.prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     );
+    const updates = [];
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (patch[key] === undefined) continue;
-      const value = String(patch[key]).trim();
-      if (key === 'accent_color' && !/^#[0-9a-f]{6}$/i.test(value)) {
-        throw new HttpError(400, 'accent_color must be a hex color like #4f46e5');
+      let value = String(patch[key] ?? '').trim();
+      if (key === 'channels' || key === 'allowed_origins') {
+        const items = value.split(/\r?\n/).map((v) => (key === 'allowed_origins' ? v.trim().replace(/\/+$/, '') : v.trim()));
+        value = [...new Set(items.filter(Boolean))].join('\n');
       }
-      if (key === 'currency' && !/^[A-Z]{3}$/.test(value)) {
-        throw new HttpError(400, 'currency must be a 3-letter ISO code like USD');
-      }
-      if (!value) throw new HttpError(400, `${key} cannot be empty`);
-      stmt.run(key, value);
+      if ((key === 'contact_object' || key === 'deal_object') && value) value = this.getObject(value).slug;
+      const ok = SETTING_RULES[key]?.(value) ?? true;
+      if (ok !== true) throw new HttpError(400, `${key} ${ok}`);
+      updates.push([key, value]);
     }
+    transaction(this.db, () => updates.forEach(([k, v]) => stmt.run(k, v)));
     return this.getSettings();
   }
 
@@ -80,10 +123,12 @@ export class Crm {
     const objects = this.db.prepare('SELECT * FROM objects ORDER BY position, id').all();
     const fields = this.db.prepare('SELECT * FROM fields ORDER BY position, id').all();
     return objects.map((o) => ({
-      ...o,
+      ...this.#objectOut(o),
       fields: fields.filter((f) => f.object_id === o.id).map(this.#fieldOut),
     }));
   }
+
+  #objectOut = (o) => ({ ...o, exit_stages: JSON.parse(o.exit_stages ?? '[]') });
 
   #fieldOut = (f) => ({
     ...f,
@@ -101,7 +146,7 @@ export class Crm {
       .prepare('SELECT * FROM fields WHERE object_id = ? ORDER BY position, id')
       .all(o.id)
       .map(this.#fieldOut);
-    return { ...o, fields };
+    return { ...this.#objectOut(o), fields };
   }
 
   createObject({ name, singular, icon, slug }) {
@@ -147,9 +192,26 @@ export class Crm {
     checkField('primary_field', 'primary_field', ['text', 'email', 'phone']);
     checkField('board_field', 'board_field', ['select']);
     checkField('value_field', 'value_field', ['number', 'currency']);
+
+    // Won and exit stages are options of the board field. Exit stages (Lost,
+    // Disqualified...) end a record's journey and are left out of funnels.
+    const stages = fieldByKey[next.board_field]?.options ?? [];
+    next.won_stage = patch.won_stage !== undefined ? patch.won_stage || null : o.won_stage;
+    next.exit_stages = patch.exit_stages !== undefined ? [...new Set(patch.exit_stages ?? [])] : o.exit_stages;
+    if (next.won_stage && !stages.includes(next.won_stage)) {
+      if (patch.won_stage !== undefined) throw new HttpError(400, 'won_stage must be one of the board field options');
+      next.won_stage = null;
+    }
+    if (patch.exit_stages !== undefined && next.exit_stages.some((v) => !stages.includes(v))) {
+      throw new HttpError(400, 'exit_stages must be board field options');
+    }
+    next.exit_stages = next.exit_stages.filter((v) => stages.includes(v) && v !== next.won_stage);
+
     this.db
-      .prepare('UPDATE objects SET name = ?, singular = ?, icon = ?, primary_field = ?, board_field = ?, value_field = ? WHERE id = ?')
-      .run(next.name, next.singular, next.icon, next.primary_field, next.board_field, next.value_field, o.id);
+      .prepare(`UPDATE objects SET name = ?, singular = ?, icon = ?, primary_field = ?, board_field = ?, value_field = ?,
+                won_stage = ?, exit_stages = ? WHERE id = ?`)
+      .run(next.name, next.singular, next.icon, next.primary_field, next.board_field, next.value_field,
+        next.won_stage, JSON.stringify(next.exit_stages), o.id);
     return this.getObject(o.id);
   }
 
@@ -259,12 +321,33 @@ export class Crm {
           }
           if (JSON.stringify(data[f.key]) !== before) update.run(JSON.stringify(data), row.id);
         }
+        if (f.type === 'select') this.#renameStages(f, renames, valid);
       }
       this.db
         .prepare('UPDATE fields SET label = ?, options = ?, required = ?, show_in_list = ? WHERE id = ?')
         .run(label, JSON.stringify(options), required ? 1 : 0, showInList ? 1 : 0, f.id);
       return this.getField(f.id);
     });
+  }
+
+  /** Keeps stage history and won/exit stages in step with renamed options. */
+  #renameStages(f, renames, valid) {
+    const scope = 'field = ? AND record_id IN (SELECT id FROM records WHERE object_id = ?)';
+    for (const [from, rawTo] of Object.entries(renames)) {
+      const to = String(rawTo).trim();
+      if (!valid.has(to)) continue;
+      this.db.prepare(`UPDATE stage_changes SET to_value = ? WHERE to_value = ? AND ${scope}`).run(to, from, f.key, f.object_id);
+      this.db.prepare(`UPDATE stage_changes SET from_value = ? WHERE from_value = ? AND ${scope}`).run(to, from, f.key, f.object_id);
+    }
+    const o = this.getObject(f.object_id);
+    if (o.board_field !== f.key) return;
+    const map = (v) => {
+      const renamed = Object.hasOwn(renames, v) ? String(renames[v]).trim() : v;
+      return valid.has(renamed) ? renamed : null;
+    };
+    const won = o.won_stage ? map(o.won_stage) : null;
+    const exits = [...new Set(o.exit_stages.map(map).filter(Boolean))];
+    this.db.prepare('UPDATE objects SET won_stage = ?, exit_stages = ? WHERE id = ?').run(won, JSON.stringify(exits), o.id);
   }
 
   deleteField(id) {
@@ -277,7 +360,12 @@ export class Crm {
       this.db
         .prepare('UPDATE records SET data = json_remove(data, ?) WHERE object_id = ?')
         .run(`$.${f.key}`, f.object_id);
-      if (o.board_field === f.key) this.db.prepare('UPDATE objects SET board_field = NULL WHERE id = ?').run(o.id);
+      this.db
+        .prepare('DELETE FROM stage_changes WHERE field = ? AND record_id IN (SELECT id FROM records WHERE object_id = ?)')
+        .run(f.key, f.object_id);
+      if (o.board_field === f.key) {
+        this.db.prepare("UPDATE objects SET board_field = NULL, won_stage = NULL, exit_stages = '[]' WHERE id = ?").run(o.id);
+      }
       if (o.value_field === f.key) this.db.prepare('UPDATE objects SET value_field = NULL WHERE id = ?').run(o.id);
       this.db.prepare('DELETE FROM fields WHERE id = ?').run(f.id);
     });
@@ -492,23 +580,61 @@ export class Crm {
     return this.#recordsOut(o, [row])[0];
   }
 
-  createRecord(objectIdOrSlug, input) {
+  /**
+   * `at` (ISO timestamp) backdates the record and its stage history; it's for
+   * imports and demo data and isn't exposed over HTTP.
+   */
+  createRecord(objectIdOrSlug, input, { at } = {}) {
     const o = this.getObject(objectIdOrSlug);
     const data = stripEmpty(this.#validate(o, input, { partial: false }));
-    const ts = now();
-    const { lastInsertRowid } = this.db
-      .prepare('INSERT INTO records (object_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)')
-      .run(o.id, JSON.stringify(data), ts, ts);
-    return this.getRecord(Number(lastInsertRowid));
+    const ts = at ?? now();
+    return transaction(this.db, () => {
+      const { lastInsertRowid } = this.db
+        .prepare('INSERT INTO records (object_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)')
+        .run(o.id, JSON.stringify(data), ts, ts);
+      const id = Number(lastInsertRowid);
+      this.#logStageChanges(o, id, {}, data, ts);
+      return this.getRecord(id);
+    });
   }
 
-  updateRecord(id, input) {
+  updateRecord(id, input, { at } = {}) {
     const current = this.getRecord(id);
     const o = this.getObject(current.object);
     const patch = this.#validate(o, input, { partial: true });
     const data = stripEmpty({ ...current.data, ...patch });
-    this.db.prepare('UPDATE records SET data = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), now(), current.id);
-    return this.getRecord(current.id);
+    const ts = at ?? now();
+    return transaction(this.db, () => {
+      this.db.prepare('UPDATE records SET data = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), ts, current.id);
+      this.#logStageChanges(o, current.id, current.data, data, ts);
+      return this.getRecord(current.id);
+    });
+  }
+
+  #logStageChanges(o, recordId, before, after, ts) {
+    const insert = this.db.prepare(
+      'INSERT INTO stage_changes (record_id, field, from_value, to_value, changed_at) VALUES (?, ?, ?, ?, ?)',
+    );
+    for (const f of o.fields) {
+      if (f.type !== 'select' || (before[f.key] ?? null) === (after[f.key] ?? null)) continue;
+      insert.run(recordId, f.key, before[f.key] ?? null, after[f.key] ?? null, ts);
+    }
+  }
+
+  /** Stage history for one record, oldest first. */
+  stageHistory(id, field) {
+    const sql = `SELECT field, from_value, to_value, changed_at FROM stage_changes
+                 WHERE record_id = ? ${field ? 'AND field = ?' : ''} ORDER BY changed_at, id`;
+    return this.db.prepare(sql).all(...(field ? [Number(id), field] : [Number(id)]));
+  }
+
+  /** Finds a record whose field equals value (case-insensitive), or null. */
+  findRecordBy(objectIdOrSlug, key, value) {
+    const o = this.getObject(objectIdOrSlug);
+    const row = this.db
+      .prepare('SELECT id FROM records WHERE object_id = ? AND lower(json_extract(data, ?)) = lower(?) ORDER BY id LIMIT 1')
+      .get(o.id, `$.${key}`, String(value));
+    return row ? this.getRecord(row.id) : null;
   }
 
   deleteRecord(id) {

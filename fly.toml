@@ -1,0 +1,33 @@
+# Fly.io deployment. First time:
+#   fly launch --no-deploy --copy-config      (pick an app name and region)
+#   fly volumes create crm_data --size 1
+#   fly deploy
+# Then open the log (fly logs) to find the one-time setup link.
+app = "christinecastro-crm"
+primary_region = "iad"
+
+[build]
+
+[env]
+  SECURE_COOKIES = "1"
+
+[[mounts]]
+  source = "crm_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # One always-on machine: SQLite lives on its volume.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

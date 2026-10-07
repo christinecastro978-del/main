@@ -216,3 +216,37 @@ dialog form { padding: 20px; }
 .toast { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow); max-width: 380px; animation: pop .15s ease-out; }
 .toast.error { background: var(--danger); color: #fff; }
 @keyframes pop { from { transform: translateY(6px); opacity: 0; } }
+
+/* ---------- sign-in ---------- */
+body.signed-out .sidebar { display: none; }
+.auth-wrap { min-height: 80vh; display: grid; place-items: center; }
+.auth-card { width: min(400px, 100%); }
+.auth-card h1 { margin-bottom: 12px; }
+.auth-brand { font-size: 32px; margin-bottom: 8px; }
+.form-error { color: var(--danger); min-height: 1em; margin: 0 0 10px; }
+.nav-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; padding: 10px 10px 0; border-top: 1px solid var(--border); }
+.nav-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.small { padding: 3px 8px; font-size: 12px; }
+
+/* ---------- reports ---------- */
+.grid-halves { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+.hbars { display: flex; flex-direction: column; gap: 6px; }
+.hbar-row { display: grid; grid-template-columns: minmax(90px, 160px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; padding: 2px 0; border-radius: 4px; }
+.hbar-row:hover { background: var(--surface-2); }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-value { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; min-width: 64px; }
+.hbar-track { height: 12px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.hbar { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 2px; }
+.funnel-table th, .funnel-table td { padding: 7px 8px; }
+.toolbar label { margin-left: 6px; }
+
+/* ---------- journey ---------- */
+.touch-label { white-space: nowrap; }
+.small-select { width: auto; padding: 3px 8px; font-size: 12px; }
+.stage-history { list-style: none; margin: 0; padding: 0 0 0 4px; }
+.stage-history li { display: flex; gap: 10px; padding: 4px 0 8px; position: relative; }
+.stage-history li:not(:last-child)::before { content: ''; position: absolute; left: 4px; top: 16px; bottom: -4px; width: 2px; background: var(--border); }
+.stage-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-top: 6px; flex-shrink: 0; }
+.copy-row { display: flex; gap: 8px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.funnel-table .hbar-track { min-width: 60px; }

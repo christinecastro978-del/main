@@ -1,7 +1,7 @@
 // Single-page CRM client. No framework: views are plain functions that build
 // DOM nodes with h(), and the hash (#/...) is the router.
 
-const state = { settings: {}, objects: [], meta: { field_types: [], activity_types: [] } };
+const state = { user: null, settings: {}, objects: [], meta: { field_types: [], activity_types: [], models: {}, groups: [] } };
 const main = document.getElementById('main');
 const PALETTE = ['#6366f1', '#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#ec4899', '#14b8a6', '#f97316', '#64748b'];
 const ACTIVITY_ICONS = { note: '📝', task: '✅', call: '📞', email: '✉️', meeting: '🤝' };
@@ -16,11 +16,17 @@ const TYPE_LABELS = {
 async function api(method, path, body) {
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    // The server rejects state-changing requests without X-CRM (CSRF protection).
+    headers: { 'X-CRM': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && state.user && path !== '/login') {
+    // Session expired mid-use.
+    state.user = null;
+    showSignIn(false);
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
@@ -90,6 +96,9 @@ const objectById = (id) => state.objects.find((o) => o.id === id);
 const optionColor = (field, value) => PALETTE[Math.max(field.options.indexOf(value), 0) % PALETTE.length];
 const pill = (text, color) => h('span', { class: 'pill', style: { '--pill': color } }, text);
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** Whole currency units, for reports where shared credit creates cents. */
+const money0 = (n) => money(Math.round(n));
 
 function money(n) {
   try {
@@ -200,11 +209,15 @@ function renderNav(path) {
   const link = (href, icon, label) => h('a', { href, class: path === href.slice(1) || (href !== '#/' && path.startsWith(href.slice(1) + '/')) ? 'active' : '' }, h('span', null, icon), label);
   fill(document.getElementById('nav'),
     link('#/', '📊', 'Dashboard'),
+    link('#/reports', '📈', 'Attribution'),
     link('#/tasks', '✅', 'Tasks'),
     h('div', { class: 'nav-label' }, 'Records'),
     state.objects.map((o) => link(`#/o/${o.slug}`, o.icon, o.name)),
     h('div', { class: 'nav-label' }, 'Customize'),
-    link('#/settings', '⚙️', 'Settings'));
+    link('#/settings', '⚙️', 'Settings'),
+    h('div', { class: 'nav-user' },
+      h('span', { class: 'muted small', title: state.user?.email }, state.user?.name ?? ''),
+      h('button', { class: 'ghost small', onclick: guard(async () => { await api('POST', '/logout'); location.reload(); }) }, 'Sign out')));
 }
 
 document.getElementById('menu-toggle').addEventListener('click', () => document.querySelector('.sidebar').classList.toggle('open'));
@@ -214,6 +227,7 @@ document.getElementById('menu-toggle').addEventListener('click', () => document.
 const routes = [
   [/^\/$/, viewDashboard],
   [/^\/tasks$/, viewTasks],
+  [/^\/reports$/, viewReports],
   [/^\/o\/([\w-]+)$/, viewList],
   [/^\/o\/([\w-]+)\/new$/, viewNewRecord],
   [/^\/r\/(\d+)$/, viewRecord],
@@ -255,7 +269,15 @@ window.addEventListener('hashchange', render);
 // ---------------------------------------------------------------- dashboard
 
 async function viewDashboard() {
-  const d = await api('GET', '/dashboard');
+  const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const [d, sources] = await Promise.all([
+    api('GET', '/dashboard'),
+    api('GET', `/reports/attribution?model=first_touch&from=${since}`),
+  ]);
+  const sourcesCard = sources.contact_object ? h('div', { class: 'card' },
+    h('h2', null, 'Where new leads came from', h('span', { class: 'muted', style: { fontWeight: 'normal' } }, ' · last 90 days, first touch')),
+    barChart(sources.rows, { value: (r) => r.leads, format: (v) => num(v, 0), empty: 'No new leads in the last 90 days.' }),
+    h('p', { class: 'small', style: { marginBottom: 0 } }, h('a', { href: '#/reports' }, 'Full attribution report →'))) : null;
   const stats = h('div', { class: 'grid grid-stats' },
     d.objects.map((o) => h('a', { class: 'card stat', href: `#/o/${o.slug}` },
       h('div', { class: 'stat-label' }, h('span', null, o.icon), o.name),
@@ -270,9 +292,12 @@ async function viewDashboard() {
 
   const boards = d.objects.filter((o) => o.board && o.count).map((o) => {
     const max = Math.max(...o.board.stages.map((s) => (o.board.value_field ? s.value : s.count)), 1);
-    const total = o.board.stages.reduce((sum, s) => sum + s.value, 0);
+    // Open pipeline: everything not yet won or exited.
+    const obj = objectBySlug(o.slug);
+    const closed = new Set([obj?.won_stage, ...(obj?.exit_stages ?? [])]);
+    const total = o.board.stages.filter((s) => !closed.has(s.stage)).reduce((sum, s) => sum + s.value, 0);
     return h('div', { class: 'card' },
-      h('h2', null, `${o.icon} ${o.name} by ${o.board.label.toLowerCase()}`, o.board.value_field ? h('span', { class: 'muted', style: { fontWeight: 'normal' } }, ` · ${money(total)} total`) : null),
+      h('h2', null, `${o.icon} ${o.name} by ${o.board.label.toLowerCase()}`, o.board.value_field ? h('span', { class: 'muted', style: { fontWeight: 'normal' } }, ` · ${money(total)} open`) : null),
       h('div', { class: 'pipeline' }, o.board.stages.map((s) => {
         const amount = o.board.value_field ? s.value : s.count;
         return h('a', { class: 'pipeline-row', href: `#/o/${o.slug}?view=board` },
@@ -297,7 +322,7 @@ async function viewDashboard() {
     welcome,
     stats,
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
-      h('div', null, boards.length ? boards : null),
+      h('div', null, sourcesCard, boards.length ? boards : null),
       h('div', null,
         h('div', { class: 'card' }, h('h2', null, 'Upcoming tasks'), taskList(d.tasks.upcoming, render, { compact: true })),
         h('div', { class: 'card' }, h('h2', null, 'Recent activity'), activityList(d.recent, render, { showRecord: true })))));
@@ -415,11 +440,15 @@ function renderTable(o, records, query, reload) {
     },
   }, label, sort === key ? (dir === 'asc' ? ' ▲' : ' ▼') : '');
   const numeric = (f) => ['number', 'currency'].includes(f.type);
+  const showSource = records.some((r) => 'first_touch' in r);
   return h('div', { class: 'table-wrap' }, h('table', null,
-    h('thead', null, h('tr', null, cols.map((f) => header(f.key, f.label, numeric(f))), header('updated_at', 'Updated'))),
+    h('thead', null, h('tr', null, cols.map((f) => header(f.key, f.label, numeric(f))),
+      showSource ? h('th', { title: 'The channel that first brought them in' }, 'First touch') : null,
+      header('updated_at', 'Updated'))),
     h('tbody', null, records.map((r) => h('tr', { class: 'clickable', onclick: () => { location.hash = `#/r/${r.id}`; } },
       cols.map((f, i) => h('td', { class: numeric(f) ? 'num' : '' },
         i === 0 ? h('a', { href: `#/r/${r.id}` }, r.title) : formatValue(f, r.data[f.key], r))),
+      showSource ? h('td', null, r.first_touch ? touchLabel(r.first_touch) : h('span', { class: 'muted' }, '—')) : null,
       h('td', { class: 'muted small' }, formatDate(r.updated_at)))))));
 }
 
@@ -542,12 +571,15 @@ async function viewNewRecord(slug, query) {
 }
 
 async function viewRecord(id, query) {
-  const [record, related, activities] = await Promise.all([
+  const model = query.get('model') ?? 'u_shaped';
+  const [record, related, activities, journey] = await Promise.all([
     api('GET', `/records/${id}`),
     api('GET', `/records/${id}/related`),
     api('GET', `/activities?record_id=${id}`),
+    api('GET', `/records/${id}/journey?model=${model}`),
   ]);
   const o = objectBySlug(record.object);
+  const tracked = [state.settings.contact_object, state.settings.deal_object].includes(o.slug);
   const editing = query.get('edit') === '1';
 
   const details = editing
@@ -602,10 +634,112 @@ async function viewRecord(id, query) {
       h('button', { class: 'danger', onclick: remove }, 'Delete')),
     h('div', { class: 'grid grid-2' },
       h('div', null, h('div', { class: 'card' }, details), relatedCards),
-      h('div', { class: 'card' },
-        h('h2', null, 'Activity'),
-        activityComposer(Number(id), reload),
-        activityList(activities, reload))));
+      h('div', null,
+        tracked || journey.touchpoints.length || journey.stage_history.length ? journeyCard(o, record, journey, model, query) : null,
+        h('div', { class: 'card' },
+          h('h2', null, 'Activity'),
+          activityComposer(Number(id), reload),
+          activityList(activities, reload)))));
+}
+
+const CHANNEL_ICONS = {
+  'Organic search': '🔎', 'Paid search': '💲', 'AI assistants': '✨', 'Organic social': '💬', 'Paid social': '📣',
+  Email: '✉️', Referral: '🤝', 'Investor / VC network': '🏦', Partner: '🧩', Events: '🎤', Podcast: '🎙️',
+  'Content / Webinar': '📚', Outbound: '📤', 'Website referral': '🔗', Direct: '➡️', Other: '•', Unattributed: '?',
+};
+
+function touchLabel(t) {
+  return h('span', { class: 'touch-label' }, h('span', null, CHANNEL_ICONS[t.channel] ?? '•'), ' ', t.channel,
+    t.source && t.source.toLowerCase() !== t.channel.toLowerCase() ? h('span', { class: 'muted' }, ` · ${t.source}`) : null);
+}
+
+function journeyCard(o, record, journey, model, query) {
+  const isDeal = o.slug === state.settings.deal_object;
+  const addForm = () => openDialog((close) => {
+    const channel = h('select', null, state.settings.channels.split('\n').map((c) => h('option', { value: c }, c)));
+    const source = h('input', { placeholder: 'e.g. Intro from Team8, RSAC 2026, Breach Point podcast' });
+    const campaign = h('input', { placeholder: 'Optional' });
+    const when = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10), max: new Date().toISOString().slice(0, 10) });
+    const note = h('textarea', { placeholder: 'Optional details', style: { minHeight: '60px' } });
+    return h('form', {
+      onsubmit: guard(async (e) => {
+        e.preventDefault();
+        const today = new Date().toISOString().slice(0, 10);
+        await api('POST', `/records/${record.id}/touchpoints`, {
+          channel: channel.value, source: source.value, campaign: campaign.value, note: note.value,
+          // Today's touches get the current time so they sort after earlier ones.
+          occurred_at: when.value === today ? new Date().toISOString() : `${when.value}T12:00:00Z`,
+        });
+        close();
+        toast('Touchpoint added');
+        render();
+      }),
+    },
+    h('h2', null, 'Add a touchpoint'),
+    h('p', { class: 'muted small' }, 'Log how they heard about you or re-engaged offline: an investor intro, a referral, an event, a podcast. Website visits are captured automatically.'),
+    h('div', { class: 'form-grid' },
+      h('div', { class: 'form-row' }, h('label', null, 'Channel'), channel),
+      h('div', { class: 'form-row' }, h('label', null, 'Date'), when),
+      h('div', { class: 'form-row wide' }, h('label', null, 'Source'), source),
+      h('div', { class: 'form-row wide' }, h('label', null, 'Campaign'), campaign),
+      h('div', { class: 'form-row wide' }, h('label', null, 'Note'), note)),
+    h('div', { class: 'form-actions' }, h('button', { type: 'button', onclick: close }, 'Cancel'), h('button', { type: 'submit', class: 'primary' }, 'Add touchpoint')));
+  });
+  const remove = guard(async (t) => {
+    if (!(await confirmDialog('Delete this touchpoint?'))) return;
+    await api('DELETE', `/touchpoints/${t.id}`);
+    render();
+  });
+  const modelSelect = h('select', { class: 'small-select', title: 'Attribution model' },
+    Object.entries(state.meta.models).map(([k, label]) => h('option', { value: k, selected: k === model }, label)));
+  modelSelect.addEventListener('change', () => { query.set('model', modelSelect.value); location.hash = `#/r/${record.id}?${query}`; });
+
+  const first = journey.first;
+  const summary = first
+    ? h('dl', { class: 'detail-list' },
+      h('dt', null, 'First touch'), h('dd', null, touchLabel(first), h('div', { class: 'muted small' }, formatDate(first.occurred_at))),
+      journey.touchpoints.length > 1 ? [h('dt', null, 'Last touch'), h('dd', null, touchLabel(journey.last), h('div', { class: 'muted small' }, formatDate(journey.last.occurred_at)))] : null,
+      h('dt', null, 'Touches'), h('dd', null, journey.touchpoints.length,
+        journey.days_since_first_touch >= 1 ? ` over ${num(journey.days_since_first_touch, 0)} days` : ', all today'))
+    : h('p', { class: 'muted' }, isDeal
+      ? 'No touchpoints yet. Deals are credited with the touches of their linked contact and everyone at their company.'
+      : 'No touchpoints yet. Add one to record how they found you.');
+
+  const history = journey.stage_history;
+  const stageRows = history.map((hst, i) => {
+    const until = history[i + 1]?.changed_at ?? null;
+    const stay = until ? (Date.parse(until) - Date.parse(hst.changed_at)) / 86400000 : null;
+    return h('li', null,
+      h('span', { class: 'stage-dot' }),
+      h('div', null, h('strong', null, hst.to_value ?? '(cleared)'),
+        h('div', { class: 'muted small' }, formatDate(hst.changed_at), stay !== null ? ` · ${num(stay, 0)} days` : ' · current')));
+  });
+
+  return h('div', { class: 'card' },
+    h('div', { class: 'page-header', style: { marginBottom: '8px' } },
+      h('h2', { style: { margin: 0 } }, '🧭 Journey'),
+      h('div', { class: 'spacer' }),
+      h('button', { class: 'small', onclick: addForm }, '+ Touchpoint')),
+    summary,
+    journey.touchpoints.length ? [
+      journey.credit_by_channel.length > 1 ? h('div', { style: { margin: '12px 0' } },
+        h('div', { class: 'toolbar', style: { marginBottom: '6px' } }, h('h3', { style: { margin: 0 } }, 'Credit'), h('div', { class: 'spacer' }), modelSelect),
+        barChart(journey.credit_by_channel.map((c) => ({ key: c.channel, credit: c.credit })), { value: (r) => r.credit, format: pct })) : null,
+      h('h3', { style: { marginTop: '14px' } }, 'Touchpoints'),
+      h('ul', { class: 'timeline' }, journey.touchpoints.map((t) => h('li', null,
+        h('div', { class: 'tl-icon' }, CHANNEL_ICONS[t.channel] ?? '•'),
+        h('div', { class: 'tl-body' },
+          h('div', null, h('strong', null, t.channel), t.source ? ` · ${t.source}` : '', t.campaign ? h('span', { class: 'muted' }, ` · ${t.campaign}`) : null),
+          t.note ? h('div', null, t.note) : null,
+          h('div', { class: 'tl-meta' },
+            formatDate(t.occurred_at, true),
+            t.landing_page ? [' · ', h('a', { href: t.landing_page, target: '_blank', rel: 'noopener noreferrer' }, t.landing_page.replace(/^https?:\/\/(www\.)?/, ''))] : null,
+            t.referrer ? ` · via ${t.referrer.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}` : null,
+            t.record ? [' · ', h('a', { href: `#/r/${t.record.id}` }, t.record.title)] : null,
+            journey.touchpoints.length > 1 ? ` · ${pct(t.credit)} credit` : null)),
+        t.record ? null : h('button', { class: 'ghost icon-btn', title: 'Delete touchpoint', onclick: () => remove(t) }, '✕')))),
+    ] : null,
+    history.length ? [h('h3', { style: { marginTop: '14px' } }, 'Stage history'), h('ul', { class: 'stage-history' }, stageRows)] : null);
 }
 
 // --------------------------------------------------------------- activities
@@ -686,6 +820,153 @@ async function viewTasks(query) {
       taskList(tasks, render)));
 }
 
+// ------------------------------------------------------------------ reports
+
+const PERIODS = { '30d': 'Last 30 days', '90d': 'Last 90 days', '12m': 'Last 12 months', ytd: 'Year to date', all: 'All time', custom: 'Custom…' };
+
+function periodRange(period, query) {
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const back = (n) => iso(new Date(Date.now() - n * 86400000));
+  switch (period) {
+    case '30d': return { from: back(30) };
+    case '90d': return { from: back(90) };
+    case '12m': return { from: back(365) };
+    case 'ytd': return { from: `${new Date().getFullYear()}-01-01` };
+    case 'custom': return { from: query.get('from') || undefined, to: query.get('to') || undefined };
+    default: return {};
+  }
+}
+
+const pct = (n) => (n === null || n === undefined ? '—' : `${Math.round(n * 100)}%`);
+const num = (n, digits = 1) => (n === null || n === undefined ? '—' : Number(n.toFixed(digits)).toLocaleString());
+
+/** Horizontal single-series bar chart: one measure, one hue, labels in ink. */
+function barChart(rows, { value, format, label = (r) => r.key, empty = 'No data for this period.' }) {
+  const max = Math.max(...rows.map(value), 0);
+  if (!max) return h('p', { class: 'muted', style: { margin: 0 } }, empty);
+  return h('div', { class: 'hbars', role: 'list' }, rows.filter((r) => value(r) > 0).map((r) => {
+    const tip = `${label(r)}: ${format(value(r))}`;
+    return h('div', { class: 'hbar-row', role: 'listitem', title: tip, 'aria-label': tip },
+      h('span', { class: 'hbar-label' }, label(r)),
+      h('div', { class: 'hbar-track' }, h('span', { class: 'hbar', style: { width: `${(value(r) / max) * 100}%` } })),
+      h('span', { class: 'hbar-value' }, format(value(r))));
+  }));
+}
+
+function funnelCard(f, title) {
+  if (!f) return null;
+  const top = f.stages[0]?.reached || 0;
+  return h('div', { class: 'card' },
+    h('h2', null, title),
+    f.total ? h('table', { class: 'funnel-table' },
+      h('thead', null, h('tr', null,
+        h('th', null, f.label), h('th', { class: 'num' }, 'Reached'), h('th', { style: { width: '35%' } }),
+        h('th', { class: 'num', title: 'Share of the previous stage that got this far' }, 'Step conv.'),
+        h('th', { class: 'num', title: 'Average days before moving to a later stage' }, 'Avg days'))),
+      h('tbody', null, f.stages.map((st) => h('tr', null,
+        h('td', null, st.stage),
+        h('td', { class: 'num' }, st.reached),
+        h('td', null, h('div', { class: 'hbar-track', title: `${st.reached} of ${top} (${pct(st.conversion_from_start)})` },
+          h('span', { class: 'hbar', style: { width: `${top ? (st.reached / top) * 100 : 0}%` } }))),
+        h('td', { class: 'num' }, st.conversion_from_previous === null ? '' : pct(st.conversion_from_previous)),
+        h('td', { class: 'num' }, num(st.avg_days_in_stage)))))) : h('p', { class: 'muted' }, 'Nothing created in this period.'),
+    f.total ? h('p', { class: 'muted small', style: { marginBottom: 0 } },
+      [f.won_stage ? `${f.won} reached ${f.won_stage}` : null,
+        f.win_rate !== null ? `win rate ${pct(f.win_rate)} (won vs. ${f.exits.map((e) => e.stage.toLowerCase()).join('/') || 'exited'})` : null,
+        f.avg_cycle_days !== null ? `average ${num(f.avg_cycle_days)} days from created to ${f.won_stage} (median ${num(f.median_cycle_days)})` : null,
+        f.exits.length ? `currently ${f.exits.map((e) => `${e.current} ${e.stage.toLowerCase()}`).join(', ')}` : null,
+      ].filter(Boolean).join(' · ')) : null);
+}
+
+async function viewReports(query) {
+  const period = query.get('period') ?? '12m';
+  const model = query.get('model') ?? 'u_shaped';
+  const groupBy = query.get('group') ?? 'channel';
+  const range = periodRange(period, query);
+  const params = new URLSearchParams({ model, group_by: groupBy });
+  if (range.from) params.set('from', range.from);
+  if (range.to) params.set('to', range.to);
+
+  const report = await api('GET', `/reports/attribution?${params}`);
+  const funnelParams = new URLSearchParams();
+  if (range.from) funnelParams.set('from', range.from);
+  if (range.to) funnelParams.set('to', range.to);
+  const funnelFor = async (slug) => {
+    const o = slug && objectBySlug(slug);
+    if (!o?.board_field) return null;
+    return api('GET', `/reports/funnel?object=${slug}&${funnelParams}`);
+  };
+  const [peopleFunnel, dealFunnel] = await Promise.all([funnelFor(report.contact_object), funnelFor(report.deal_object)]);
+
+  const go = (changes) => {
+    for (const [k, v] of Object.entries(changes)) if (v) query.set(k, v); else query.delete(k);
+    location.hash = `#/reports?${query}`;
+  };
+  const select = (options, value, key) => {
+    const el = h('select', null, Object.entries(options).map(([v, label]) => h('option', { value: v, selected: v === value }, label)));
+    el.addEventListener('change', () => go({ [key]: el.value }));
+    return el;
+  };
+  const from = h('input', { type: 'date', value: query.get('from') ?? '' });
+  const to = h('input', { type: 'date', value: query.get('to') ?? '' });
+  for (const el of [from, to]) el.addEventListener('change', () => go({ from: from.value, to: to.value }));
+
+  const groupLabel = { channel: 'Channel', source: 'Source', campaign: 'Campaign' }[groupBy];
+  const t = report.totals;
+  const tiles = [
+    ['Leads', num(t.leads, 0), report.contact_object ? `new ${objectBySlug(report.contact_object)?.name.toLowerCase()}` : 'not configured'],
+    ['Opportunities', t.opportunities, 'deals opened'],
+    ['Open pipeline', money0(t.pipeline), 'from deals opened'],
+    ['Won revenue', money0(t.revenue), `${t.won} deals won`],
+    ['Win rate', pct(dealFunnel?.win_rate ?? null), 'won ÷ (won + lost)'],
+    ['Sales cycle', dealFunnel?.avg_cycle_days != null ? `${num(dealFunnel.avg_cycle_days, 0)} days` : '—', 'avg. opened → won'],
+  ];
+  const fmtCount = (v) => num(v, 2);
+
+  return h('div', null,
+    h('div', { class: 'page-header' }, h('h1', null, '📈 Attribution')),
+    h('div', { class: 'toolbar' },
+      select(PERIODS, period, 'period'),
+      period === 'custom' ? [from, to] : null,
+      h('label', { class: 'muted small' }, 'Model'), select(state.meta.models, model, 'model'),
+      h('label', { class: 'muted small' }, 'Group by'), select({ channel: 'Channel', source: 'Source', campaign: 'Campaign' }, groupBy, 'group')),
+    h('div', { class: 'grid grid-stats', style: { marginBottom: '16px' } }, tiles.map(([label, value, sub]) =>
+      h('div', { class: 'card stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), h('div', { class: 'muted small' }, sub)))),
+    h('div', { class: 'grid grid-halves' },
+      h('div', { class: 'card' }, h('h2', null, `Won revenue by ${groupLabel.toLowerCase()}`),
+        barChart(report.rows, { value: (r) => r.revenue, format: money0, empty: 'No deals won in this period.' })),
+      h('div', { class: 'card' }, h('h2', null, `Leads by ${groupLabel.toLowerCase()}`),
+        barChart(report.rows, { value: (r) => r.leads, format: fmtCount, empty: 'No new leads in this period.' }))),
+    h('div', { class: 'card', style: { marginTop: '16px' } },
+      h('h2', null, `${groupLabel} performance`),
+      report.rows.length ? h('div', { class: 'table-wrap', style: { boxShadow: 'none' } }, h('table', null,
+        h('thead', null, h('tr', null, [groupLabel, 'Touchpoints', 'Leads', 'Opportunities', 'Open pipeline', 'Won', 'Revenue', 'Win rate']
+          .map((c, i) => h('th', { class: i ? 'num' : '' }, c)))),
+        h('tbody', null, report.rows.map((r) => h('tr', null,
+          h('td', null, r.key),
+          h('td', { class: 'num' }, r.touchpoints),
+          h('td', { class: 'num' }, fmtCount(r.leads)),
+          h('td', { class: 'num' }, fmtCount(r.opportunities)),
+          h('td', { class: 'num' }, money0(r.pipeline)),
+          h('td', { class: 'num' }, fmtCount(r.won)),
+          h('td', { class: 'num' }, money0(r.revenue)),
+          h('td', { class: 'num' }, pct(r.win_rate))))))) : h('p', { class: 'muted' }, 'No touchpoints yet. Install the website snippet (Settings → Attribution & tracking) or add touchpoints on contact pages.'),
+      h('p', { class: 'muted small', style: { marginBottom: 0 } },
+        `${state.meta.models[model]}: `, MODEL_HELP[model],
+        ' Leads use all of a person’s touches; deals use touches from their contacts (and everyone at the linked company) up to the day the deal was opened. Fractions are shared credit.')),
+    h('div', { class: 'grid grid-halves', style: { marginTop: '16px' } },
+      funnelCard(peopleFunnel, `${objectBySlug(report.contact_object)?.name ?? 'People'} funnel`),
+      funnelCard(dealFunnel, `${objectBySlug(report.deal_object)?.name ?? 'Deal'} pipeline`)));
+}
+
+const MODEL_HELP = {
+  first_touch: 'all credit to the touch that first brought them in. Best for judging which channels create new demand.',
+  last_touch: 'all credit to the final touch before converting. Best for judging what closes interest into action.',
+  linear: 'credit split evenly across every touch.',
+  u_shaped: '40% to the first touch, 40% to the last, 20% shared by everything in between. A balanced default for B2B.',
+  time_decay: 'touches closer to the conversion get more credit (halving every 7 days back).',
+};
+
 // ----------------------------------------------------------------- settings
 
 async function viewSettings() {
@@ -733,9 +1014,130 @@ async function viewSettings() {
       h('button', { class: 'ghost icon-btn', title: 'Move down', disabled: i === state.objects.length - 1, onclick: () => move(i, 1) }, '↓'),
       h('a', { class: 'btn', href: `#/settings/o/${o.slug}` }, 'Customize')))));
 
+  const [tracking, users] = await Promise.all([api('GET', '/tracking'), api('GET', '/users')]);
+
   return h('div', { style: { maxWidth: '820px' } },
     h('div', { class: 'page-header' }, h('h1', null, '⚙️ Settings')),
-    general, objects);
+    general, objects, trackingCard(tracking), teamCard(users), accountCard());
+}
+
+function copyField(value) {
+  const input = h('input', { value, readonly: true, class: 'mono', onclick: (e) => e.target.select() });
+  return h('div', { class: 'copy-row' }, input,
+    h('button', { type: 'button', onclick: guard(async () => { await navigator.clipboard.writeText(value); toast('Copied'); }) }, 'Copy'));
+}
+
+function trackingCard(tracking) {
+  const s = state.settings;
+  const objectSelect = (value) => h('select', null, h('option', { value: '' }, '— None —'),
+    state.objects.map((o) => h('option', { value: o.slug, selected: o.slug === value }, `${o.icon} ${o.name}`)));
+  const contactObject = objectSelect(s.contact_object);
+  const dealObject = objectSelect(s.deal_object);
+  const contactObj = objectBySlug(s.contact_object);
+  const stageOptions = contactObj?.fields.find((f) => f.key === contactObj.board_field)?.options ?? [];
+  const leadStage = h('select', null, h('option', { value: '' }, '— Leave unchanged —'), stageOptions.map((o) => h('option', { value: o, selected: o === s.lead_stage }, o)));
+  const channels = h('textarea', { value: s.channels, rows: 8 });
+  const origins = h('textarea', { value: s.allowed_origins, rows: 3, placeholder: 'https://example.com', class: 'mono' });
+
+  const form = h('form', {
+    onsubmit: guard(async (e) => {
+      e.preventDefault();
+      state.settings = await api('PUT', '/settings', {
+        contact_object: contactObject.value, deal_object: dealObject.value, lead_stage: leadStage.value,
+        channels: channels.value, allowed_origins: origins.value,
+      });
+      toast('Attribution settings saved');
+      render();
+    }),
+  },
+  h('div', { class: 'form-grid' },
+    h('div', { class: 'form-row' }, h('label', null, 'People record type'), contactObject, h('div', { class: 'muted small' }, 'Touchpoints and website form leads land here.')),
+    h('div', { class: 'form-row' }, h('label', null, 'Revenue record type'), dealObject, h('div', { class: 'muted small' }, 'Credited with pipeline and won revenue.')),
+    h('div', { class: 'form-row' }, h('label', null, 'Stage for new form leads'), leadStage),
+    h('div', { class: 'form-row wide' }, h('label', null, 'Channels'), channels, h('div', { class: 'muted small' }, 'One per line. Website visits are classified automatically; these are the choices when you log a touchpoint by hand.')),
+    h('div', { class: 'form-row wide' }, h('label', null, 'Websites allowed to send leads'), origins, h('div', { class: 'muted small' }, 'One origin per line, e.g. https://christinecastro.com. Forms on other sites are rejected.'))),
+  h('div', { class: 'form-actions' }, h('button', { type: 'submit', class: 'primary' }, 'Save')));
+
+  return h('div', { class: 'card' },
+    h('h2', null, '🧭 Attribution & tracking'),
+    h('h3', null, '1. Add this to every page of your website'),
+    h('p', { class: 'muted small' }, 'Paste it into your site’s header code (Squarespace: Settings → Advanced → Code Injection; Webflow: Site settings → Custom code; WordPress: a header/footer plugin). It remembers each visitor’s UTM tags, ad clicks and referring site in their browser and sends them, with the form, when they submit any form with an email field. Nothing is sent for visitors who never fill in a form.'),
+    copyField(tracking.snippet),
+    h('h3', { style: { marginTop: '16px' } }, '2. Or send leads from other tools'),
+    h('p', { class: 'muted small' }, 'POST JSON to this webhook from Zapier, Make, Calendly, LinkedIn Lead Gen Forms, etc. Fields: email (required), name, company, title, phone, message, and optional channel, source, medium, campaign, occurred_at. Keep the URL private; it works like a password.'),
+    copyField(tracking.webhook_url),
+    h('button', {
+      class: 'small', style: { marginTop: '6px' },
+      onclick: guard(async () => {
+        if (!(await confirmDialog('Create a new webhook URL? The current one stops working immediately.', { confirmLabel: 'Rotate', danger: true }))) return;
+        await api('POST', '/tracking/rotate');
+        render();
+      }),
+    }, 'Rotate webhook URL'),
+    h('h3', { style: { marginTop: '18px' } }, '3. Settings'),
+    form);
+}
+
+function teamCard(users) {
+  const add = () => openDialog((close) => {
+    const name = h('input', { required: true });
+    const email = h('input', { type: 'email', required: true });
+    const password = h('input', { type: 'password', required: true, minlength: 10, autocomplete: 'new-password' });
+    return h('form', {
+      onsubmit: guard(async (e) => {
+        e.preventDefault();
+        await api('POST', '/users', { name: name.value, email: email.value, password: password.value });
+        close();
+        toast('User added. Share the password with them securely.');
+        render();
+      }),
+    },
+    h('h2', null, 'Add a user'),
+    h('p', { class: 'muted small' }, 'Everyone has full access for now. They can change their password after signing in.'),
+    h('div', { class: 'form-row' }, h('label', null, 'Name'), name),
+    h('div', { class: 'form-row' }, h('label', null, 'Email'), email),
+    h('div', { class: 'form-row' }, h('label', null, 'Temporary password'), password, h('div', { class: 'muted small' }, 'At least 10 characters.')),
+    h('div', { class: 'form-actions' }, h('button', { type: 'button', onclick: close }, 'Cancel'), h('button', { type: 'submit', class: 'primary' }, 'Add user')));
+  });
+  return h('div', { class: 'card' },
+    h('div', { class: 'page-header', style: { marginBottom: '8px' } },
+      h('h2', { style: { margin: 0 } }, '👥 Team'),
+      h('div', { class: 'spacer' }),
+      h('button', { onclick: add }, '+ Add user')),
+    h('ul', { class: 'field-list' }, users.map((u) => h('li', null,
+      h('div', { class: 'grow' }, h('strong', null, u.name), ' ', h('span', { class: 'muted' }, u.email),
+        h('div', { class: 'muted small' }, u.last_login_at ? `Last signed in ${formatDate(u.last_login_at, true)}` : 'Never signed in')),
+      u.id === state.user.id ? h('span', { class: 'badge' }, 'you') : h('button', {
+        class: 'danger',
+        onclick: guard(async () => {
+          if (!(await confirmDialog(`Remove ${u.name}'s access?`, { confirmLabel: 'Remove' }))) return;
+          await api('DELETE', `/users/${u.id}`);
+          render();
+        }),
+      }, 'Remove')))));
+}
+
+function accountCard() {
+  const current = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
+  const next = h('input', { type: 'password', required: true, minlength: 10, autocomplete: 'new-password' });
+  return h('div', { class: 'card' },
+    h('h2', null, '🔒 Your account & data'),
+    h('form', {
+      onsubmit: guard(async (e) => {
+        e.preventDefault();
+        await api('POST', '/me/password', { current_password: current.value, new_password: next.value });
+        current.value = '';
+        next.value = '';
+        toast('Password changed. Other devices were signed out.');
+      }),
+    },
+    h('div', { class: 'form-grid' },
+      h('div', { class: 'form-row' }, h('label', null, 'Current password'), current),
+      h('div', { class: 'form-row' }, h('label', null, 'New password'), next)),
+    h('div', { class: 'form-actions' }, h('button', { type: 'submit' }, 'Change password'))),
+    h('h3', null, 'Backups'),
+    h('p', { class: 'muted small' }, 'Download a complete copy of the database (a single SQLite file). Do this regularly and keep it somewhere safe.'),
+    h('a', { class: 'btn', href: '/api/backup', download: '' }, '⬇ Download backup'));
 }
 
 function newObjectDialog() {
@@ -845,6 +1247,9 @@ async function viewObjectSettings(slug) {
   const primary = fieldSelect(['text', 'email', 'phone'], o.primary_field, false);
   const board = fieldSelect(['select'], o.board_field, true);
   const value = fieldSelect(['number', 'currency'], o.value_field, true);
+  const stages = o.fields.find((f) => f.key === o.board_field)?.options ?? [];
+  const won = h('select', null, h('option', { value: '' }, '— None —'), stages.map((st) => h('option', { value: st, selected: st === o.won_stage }, st)));
+  const exitBoxes = stages.map((st) => h('input', { type: 'checkbox', value: st, checked: o.exit_stages.includes(st) }));
 
   const general = h('form', {
     class: 'card',
@@ -853,6 +1258,7 @@ async function viewObjectSettings(slug) {
       await api('PATCH', `/objects/${slug}`, {
         name: name.value, singular: singular.value, icon: icon.value,
         primary_field: primary.value, board_field: board.value || null, value_field: value.value || null,
+        ...(board.value === o.board_field ? { won_stage: won.value || null, exit_stages: exitBoxes.filter((b) => b.checked).map((b) => b.value) } : {}),
       });
       await loadSchema();
       toast('Saved');
@@ -866,7 +1272,12 @@ async function viewObjectSettings(slug) {
     h('div', { class: 'form-row' }, h('label', null, 'Icon (emoji)'), icon),
     h('div', { class: 'form-row' }, h('label', null, 'Title field'), primary, h('div', { class: 'muted small' }, 'Names each record in lists and links.')),
     h('div', { class: 'form-row' }, h('label', null, 'Board / pipeline field'), board, h('div', { class: 'muted small' }, 'Enables the drag-and-drop board, grouped by this field’s options.')),
-    h('div', { class: 'form-row' }, h('label', null, 'Value field'), value, h('div', { class: 'muted small' }, 'Summed per board column and on the dashboard.'))),
+    h('div', { class: 'form-row' }, h('label', null, 'Value field'), value, h('div', { class: 'muted small' }, 'Summed per board column and on the dashboard.')),
+    stages.length ? [
+      h('div', { class: 'form-row' }, h('label', null, 'Won stage'), won, h('div', { class: 'muted small' }, 'Reaching it counts as a win in funnels and revenue reports.')),
+      h('div', { class: 'form-row wide' }, h('label', null, 'Exit stages'), h('div', { class: 'checks' }, exitBoxes.map((b) => h('label', null, b, b.value))),
+        h('div', { class: 'muted small' }, 'Stages that end the journey without a win (Lost, Disqualified…). They’re left out of funnel steps and count as losses in win rate.')),
+    ] : null),
   h('div', { class: 'form-actions' }, h('button', { type: 'submit', class: 'primary' }, 'Save')));
 
   const move = guard(async (index, delta) => {
@@ -930,12 +1341,63 @@ async function viewObjectSettings(slug) {
 
 // --------------------------------------------------------------------- boot
 
+function showSignIn(needsSetup) {
+  document.body.classList.add('signed-out');
+  const setupToken = currentRoute().query.get('token') ?? '';
+  const email = h('input', { type: 'email', autocomplete: 'username', required: true });
+  const password = h('input', { type: 'password', autocomplete: needsSetup ? 'new-password' : 'current-password', required: true, minlength: needsSetup ? 10 : undefined });
+  const name = h('input', { autocomplete: 'name', required: true });
+  const token = h('input', { value: setupToken, required: true });
+  const error = h('p', { class: 'form-error', role: 'alert' });
+  const form = h('form', {
+    class: 'card auth-card',
+    onsubmit: async (e) => {
+      e.preventDefault();
+      error.textContent = '';
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      try {
+        const res = needsSetup
+          ? await api('POST', '/setup', { token: token.value.trim(), name: name.value, email: email.value, password: password.value })
+          : await api('POST', '/login', { email: email.value, password: password.value });
+        state.user = res.user;
+        document.body.classList.remove('signed-out');
+        if (needsSetup) history.replaceState(null, '', '#/');
+        await startApp();
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    },
+  },
+  h('div', { class: 'auth-brand' }, h('span', { class: 'brand-mark', style: { width: '40px', height: '40px', fontSize: '20px' } }, (state.settings.business_name ?? 'C').trim().charAt(0).toUpperCase())),
+  h('h1', null, needsSetup ? 'Create your account' : 'Sign in'),
+  needsSetup ? h('p', { class: 'muted' }, 'Welcome! This is a new CRM. The setup token is printed in the server log when it starts.') : null,
+  needsSetup ? h('div', { class: 'form-row' }, h('label', null, 'Setup token'), token) : null,
+  needsSetup ? h('div', { class: 'form-row' }, h('label', null, 'Your name'), name) : null,
+  h('div', { class: 'form-row' }, h('label', null, 'Email'), email),
+  h('div', { class: 'form-row' }, h('label', null, 'Password'), password, needsSetup ? h('div', { class: 'muted small' }, 'At least 10 characters.') : null),
+  error,
+  h('button', { type: 'submit', class: 'primary', style: { width: '100%', justifyContent: 'center' } }, needsSetup ? 'Create account' : 'Sign in'));
+  main.replaceChildren(h('div', { class: 'auth-wrap' }, form));
+  (needsSetup && !setupToken ? token : needsSetup ? name : email).focus();
+}
+
+async function startApp() {
+  [state.meta] = await Promise.all([api('GET', '/meta'), loadSchema()]);
+  render();
+}
+
 (async () => {
   try {
-    [state.meta] = await Promise.all([api('GET', '/meta'), loadSchema()]);
+    const session = await api('GET', '/session');
+    state.settings = { ...state.settings, ...session.branding };
+    applyBranding();
+    if (!session.user) return showSignIn(session.needs_setup);
+    state.user = session.user;
+    await startApp();
   } catch (err) {
     main.replaceChildren(h('div', { class: 'card empty' }, `Couldn't reach the CRM server: ${err.message}`));
-    return;
   }
-  render();
 })();

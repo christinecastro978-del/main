@@ -54,7 +54,67 @@ CREATE TABLE IF NOT EXISTS activities (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS activities_record ON activities (record_id);
+
+-- Marketing touches (a visit from a campaign, an intro, an event...) that
+-- attribution credits for leads and revenue.
+CREATE TABLE IF NOT EXISTS touchpoints (
+  id           INTEGER PRIMARY KEY,
+  record_id    INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+  occurred_at  TEXT NOT NULL,
+  channel      TEXT NOT NULL,
+  source       TEXT,
+  medium       TEXT,
+  campaign     TEXT,
+  content      TEXT,
+  term         TEXT,
+  landing_page TEXT,
+  referrer     TEXT,
+  note         TEXT,
+  origin       TEXT NOT NULL DEFAULT 'manual',
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS touchpoints_record ON touchpoints (record_id, occurred_at);
+
+-- Every change to a select field, so funnels and stage velocity can be measured.
+CREATE TABLE IF NOT EXISTS stage_changes (
+  id         INTEGER PRIMARY KEY,
+  record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+  field      TEXT NOT NULL,
+  from_value TEXT,
+  to_value   TEXT,
+  changed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS stage_changes_record ON stage_changes (record_id, field, changed_at);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  last_login_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
+
+/** Columns added after the first release; applied to older databases on open. */
+const ADDED_COLUMNS = [
+  ['objects', 'won_stage', 'TEXT'],
+  ['objects', 'exit_stages', "TEXT NOT NULL DEFAULT '[]'"],
+];
+
+function migrate(db) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const exists = db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(column);
+    if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
 
 export function openDb(file = ':memory:') {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
@@ -62,6 +122,7 @@ export function openDb(file = ':memory:') {
   db.exec('PRAGMA foreign_keys = ON;');
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
