@@ -1,0 +1,15 @@
+{
+  "name": "custom-crm",
+  "version": "1.0.0",
+  "description": "A customizable, self-hosted CRM for small businesses. Define your own objects, fields and pipelines.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "demo": "node --disable-warning=ExperimentalWarning src/demo.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  }
+}
