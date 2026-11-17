@@ -48,3 +48,9 @@
 - Artifact: `CANARY.md` (section "Sent check").
 - Check: 0 Sent threads matched in the last 2 days. No message ID, receipt or label. 10 of 10 prospects held. No second self-test created.
 - Next task: owner reviews the 8 drafts. A real self-test needs a saved sending route, the owner's own test address and an explicit release.
+
+## 2026-11-17: pilot release (held)
+- Step: checked the release preconditions for the 10-prospect pilot. All failed or are missing on the Drafts-only route, so nothing was released. No gtm.py or provider commands were run, and no buyers were substituted.
+- Artifact: `PILOT-RESULTS.md`.
+- Check: prepared 8, held 10 of 10, accepted 0, Sent 0, unknown 0. Lifetime cap: 0 of 11 used. Draft hash unchanged.
+- Next task: owner reviews the 8 drafts. A real pilot needs a saved sending route first.
