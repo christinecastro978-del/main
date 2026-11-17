@@ -11,3 +11,9 @@
 - Artifact: `COMPANY-BRIEF.md`, with `REVIEW.md` and `EXECUTION-FLOW.md` updated.
 - Check: 1 page captured; 12 proof points recorded as the site states them; 0 exclusions confirmed; 0 drafts; 0 sent. Missing: outreach history, exclusions, bookings, a sourced buyer list. No sender access (none needed on this route).
 - Next task: confirm exclusions (for example, past employers) and build a sourced list of 10 Seed to Series C cybersecurity companies for drafts.
+
+## 2026-11-17: exclusions confirmed, CRM read, shortlist built
+- Step: saved the 7 owner-confirmed exclusions. Read GTM Radar CRM (read-only) and screened its 42 contact rows into a 10-company Seed to Series C shortlist.
+- Artifacts: `EXCLUSIONS.md`, `CRM-SOURCE.md`, `TARGET-LIST.md`, with `REVIEW.md` and `EXECUTION-FLOW.md` updated.
+- Check: 470 CRM rows; 3 excluded companies found in the sheet (COGNNA, HYPR, Morphisec); 0 sends or replies recorded; 0 contact emails; 10 rows shortlisted, all held; 0 sent; the sheet is unchanged.
+- Next task: review the 10 existing CRM drafts against `COMPANY-BRIEF.md` and re-verify each company's stage and contact.
