@@ -73,3 +73,9 @@
 - Check: Gmail found 1 unrelated thread (A Security declined the owner's VP Marketing application, 2026-07-06); 0 opt-outs. Calendar semantic search found 0 events (partial coverage). No reply sent; pilot unchanged.
 - Owner decision: A Security stays held, not excluded (saved in `ANSWERS.md`).
 - Next task: owner reviews the 8 pilot drafts and confirms the HYPR and Morphisec line.
+
+## 2026-11-17: next-run instructions
+- Step: saved a reusable manual prompt for the next drafts-only cycle, with a state readback, named missing access and one next task.
+- Artifact: `NEXT-RUN.md`.
+- Check: 0 keys and 0 sends read back; 7 exclusions and 2 owner holds kept; 6 setup gaps named (route, sender tool, validator, self-test address, customer, deal and booking sources, two manual cycles). No schedule installed; no new cohort; runtime paused.
+- Next task: owner reviews the 8 drafts and confirms the HYPR and Morphisec line.
