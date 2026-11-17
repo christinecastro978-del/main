@@ -36,3 +36,9 @@
 - Artifact: `PILOT-REVIEW.md`, with draft cohort hash `d74d7b1acb422366…`.
 - Check: 8 drafts written, 2 companies held, 1 self-test not prepared; 0 addresses, 0 CSVs, 0 imports, 0 sends; no approval requested or recorded.
 - Next task: owner reviews the 8 drafts (approve, edit or reject). To run a real pilot, the owner first saves a new route in `SEND-ROUTE.md`.
+
+## 2026-11-17: canary (simulated, held)
+- Step: ran a simulated local preflight for the self-test. No submission: the route is Drafts only, and no manifest, approval or self-test row exists.
+- Artifact: `CANARY.md`.
+- Check: decision HOLD; 0 submitted; no provider result; the draft cohort hash is unchanged (`d74d7b1a…`). Six pieces of live evidence are missing (listed in `CANARY.md`).
+- Next task: owner reviews the 8 drafts. To test a real send, the owner first saves a sending route and supplies their own self-test address.
