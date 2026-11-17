@@ -1,5 +1,7 @@
 # Target shortlist (10)
 
+Verified 2026-11-17 against official sources. `ACCOUNTS.json` and `PEOPLE.json` hold the current facts and labels. The stages below are the CRM's and are partly outdated.
+
 Taken from GTM Radar CRM rows that already have a named contact and a draft.
 Rules: Seed to Series C as recorded in the sheet; founder or CEO contact; a source recorded; no conflict flag; not excluded; not acquired.
 Stages and contacts are as recorded in the sheet and have not been re-verified.

@@ -6,6 +6,14 @@
 - Exclusions: 7 companies confirmed in `EXCLUSIONS.md`. Opt-outs and bookings: not found.
 - Buyer list: 10-company shortlist in `TARGET-LIST.md`, taken from the CRM. Stages are not re-verified. No contact emails.
 - Sender access: none. Not needed on the drafts-only route.
+- Email validation: no ZeroBounce access or paid-call approval. No addresses found or guessed.
+
+## CRM fields found outdated (2026-11-17)
+- Cogent Security: domain is now cogent.com (cogent.security redirects).
+- Tines: Series C (Feb 2025), not Series B; domain tines.com.
+- Oligo Security: the newsroom shows a $50M Series B; the CRM's $60M is not confirmed.
+- Cantina: now a broad agentic security platform, not Web3-only.
+- A Security: domain a.security; the CRM's Tel Aviv HQ is not confirmed.
 
 ## What is known
 - ICP, from `README.md`: founders and CEOs of venture-backed cybersecurity companies, for a fractional marketing practice.
