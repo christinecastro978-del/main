@@ -35,3 +35,25 @@ Counts: prepared 8; held 10 of 10; accepted 0; Sent 0; unknown 0. No buyer was s
 
 ## Live evidence still missing
 Saved sending route; validated prospect and self-test addresses; manifest with original keys; owner YES for this exact version; self-test Sent plus receipt; fresh exclusion, history and booking reads; then, per prospect, a native Sent ID and a label readback.
+
+## Results read, 2026-11-17: no native activity exists
+
+No original keys, provider or container IDs, message IDs, thread IDs or send timestamps exist: nothing was imported or submitted on the Drafts-only route. No container exists to pause. No send or import was repeated.
+
+| Count | Value | Evidence |
+|---|---|---|
+| Prepared (drafts) | 8 | `PROSPECT-DRAFTS.json` |
+| Held | 10 of 10 prospects, plus the self-test | This file; `CANARY.md` |
+| Queued | 0 | No provider |
+| Accepted | 0 | No provider |
+| Sent (exact) | 0 | Gmail Sent search returned 0 threads (`CANARY.md`) |
+| Received | 0 | — |
+| Bounced | 0 | — |
+| Replied | 0 | Nothing sent |
+| Booked | 0 | Nothing sent |
+| Unknown commitments | 0 | No submission attempted |
+
+Reconciliation: 0 of 11 original keys exist, so there is nothing to reconcile. The full 10-prospect send is not done: 0 exact Sent matches out of 10.
+
+## Next action (one, evidence-supported)
+Owner reviews the 8 drafts in `EMAIL-PREVIEWS.md` (approve, edit or reject). Evidence: the drafts exist with the hash `d74d7b1a…`, and every release precondition above fails first on missing owner review and a missing sending route.

@@ -54,3 +54,9 @@
 - Artifact: `PILOT-RESULTS.md`.
 - Check: prepared 8, held 10 of 10, accepted 0, Sent 0, unknown 0. Lifetime cap: 0 of 11 used. Draft hash unchanged.
 - Next task: owner reviews the 8 drafts. A real pilot needs a saved sending route first.
+
+## 2026-11-17: results read (none to read)
+- Step: read the pilot results. No native activity exists because nothing was imported or sent; recorded all counts separately. Saved waits and one next action.
+- Artifacts: `PILOT-RESULTS.md` (section "Results read"), `WAITS.md`.
+- Check: prepared 8, held 10 of 10, queued 0, accepted 0, Sent 0, received 0, bounced 0, replied 0, booked 0, unknown 0. 0 of 11 keys exist; no container to pause; no repeat send or import.
+- Next task: owner reviews the 8 drafts in `EMAIL-PREVIEWS.md`.
