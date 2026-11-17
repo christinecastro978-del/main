@@ -29,3 +29,18 @@ Decision: **HOLD**. Submitted: 0. Provider result: none.
 4. The owner's explicit release of that exact self-test.
 5. A fresh exclusion, history and booking read, with original timestamps.
 6. After a single submission: the native Sent record and the provider receipt.
+
+## Sent check, 2026-11-17: NOT POSSIBLE (no original self-test)
+
+There is no original self-test to match: the canary was never submitted, so it has no provider message ID, Sent record or receipt. No second self-test was created.
+
+| Check | Result |
+|-------|--------|
+| Original self-test key or provider message ID | NONE: nothing was submitted |
+| Native Sent record matching the approved preview | NONE |
+| Owned recipient received the original email | NONE |
+| Gmail label Agentic GTM/Part 2 | NOT APPLIED: Drafts-only route; no Sent message to label |
+| Read-only Gmail Sent search: `in:sent newer_than:2d subject:(Series OR "next marketing stage" OR "Cantina's raise")` | 0 threads. Live read; it shows no draft subject was sent in the last 2 days |
+| Prospects | HELD (10 of 10) |
+
+Live evidence still missing: everything in "Live evidence still missing" above, plus the native Sent message ID, a recipient-side receipt and the label readback after a real self-test.

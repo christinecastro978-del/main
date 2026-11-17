@@ -42,3 +42,9 @@
 - Artifact: `CANARY.md`.
 - Check: decision HOLD; 0 submitted; no provider result; the draft cohort hash is unchanged (`d74d7b1a…`). Six pieces of live evidence are missing (listed in `CANARY.md`).
 - Next task: owner reviews the 8 drafts. To test a real send, the owner first saves a sending route and supplies their own self-test address.
+
+## 2026-11-17: Sent check (none to match)
+- Step: attempted the self-test Sent match. No original self-test exists (the canary was held), so there was nothing to match or label. Ran one read-only Gmail Sent search for the draft subjects.
+- Artifact: `CANARY.md` (section "Sent check").
+- Check: 0 Sent threads matched in the last 2 days. No message ID, receipt or label. 10 of 10 prospects held. No second self-test created.
+- Next task: owner reviews the 8 drafts. A real self-test needs a saved sending route, the owner's own test address and an explicit release.
