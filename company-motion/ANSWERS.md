@@ -13,3 +13,4 @@ Not yet answered: the full sanctions list to apply (the owner said "etc."). Unti
 |------|----------|--------|
 | 2026-11-17 | Email signature | Christine Castro / 978-852-7484 |
 | 2026-11-17 | Opt-out line | If this isn't relevant, reply "no thanks" and I won't follow up. |
+| 2026-11-17 | A Security (declined VP Marketing application, 2026-07-06) | Keep held, not excluded |

@@ -27,4 +27,4 @@ Route: Drafts only. **No pilot email was sent, so no pilot reply or booking can 
 None needed: there are no replies to answer.
 
 ## One next action
-Owner decides on A Security (exclude, or keep held), then reviews the 8 pilot drafts. Next check: after any real send on a saved sending route.
+Owner decided (2026-11-17): A Security stays held, not excluded. Next: owner reviews the 8 pilot drafts. Next check: after any real send on a saved sending route.
