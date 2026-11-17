@@ -60,3 +60,9 @@
 - Artifacts: `PILOT-RESULTS.md` (section "Results read"), `WAITS.md`.
 - Check: prepared 8, held 10 of 10, queued 0, accepted 0, Sent 0, received 0, bounced 0, replied 0, booked 0, unknown 0. 0 of 11 keys exist; no container to pause; no repeat send or import.
 - Next task: owner reviews the 8 drafts in `EMAIL-PREVIEWS.md`.
+
+## 2026-11-17: email skill saved and tested
+- Step: saved the first-email instructions as a reusable skill, then used it for one extra unsent local draft (Tailscale, the saved next-in-line target), with official and trade-press sources.
+- Artifacts: `skills/outbound-email/SKILL.md`, `SKILL-TEST.md`.
+- Check: the draft passes the stage, country, exclusion, role, link and placeholder checks; word count is in `SKILL-TEST.md`. It is not imported, not sent and not added to the pilot. The 11-email cap and the original cohort are unchanged.
+- Next task: owner reviews the 8 pilot drafts plus the Tailscale skill test, and confirms the HYPR and Morphisec line.
