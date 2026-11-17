@@ -66,3 +66,9 @@
 - Artifacts: `skills/outbound-email/SKILL.md`, `SKILL-TEST.md`.
 - Check: the draft passes the stage, country, exclusion, role, link and placeholder checks; word count is in `SKILL-TEST.md`. It is not imported, not sent and not added to the pilot. The 11-email cap and the original cohort are unchanged.
 - Next task: owner reviews the 8 pilot drafts plus the Tailscale skill test, and confirms the HYPR and Morphisec line.
+
+## 2026-11-17: reply and booking review
+- Step: no pilot sends, so 0 pilot replies, opt-outs or bookings. Ran read-only Gmail and Calendar history checks on the 11 target domains and names.
+- Artifact: `REPLY-REVIEW.md`.
+- Check: Gmail found 1 unrelated thread (A Security declined the owner's VP Marketing application, 2026-07-06); 0 opt-outs. Calendar semantic search found 0 events (partial coverage). No reply sent; pilot unchanged.
+- Next task: owner decides whether to exclude A Security, then reviews the 8 drafts.
