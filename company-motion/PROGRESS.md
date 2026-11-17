@@ -30,3 +30,9 @@
 - Artifacts: `EMAIL-PREVIEWS.md` and `PROSPECT-DRAFTS.json` (plain text, HTML and a source note for each draft); signature and opt-out saved in `ANSWERS.md`.
 - Check: 8 drafts; 58 to 70 words each before the opt-out and signature; 0 links, tokens or unresolved variables (checked by script); every funding claim tied to an official or trade-press source. 2 companies held (A Security, Way Security). 0 addresses; 0 imported; 0 sent.
 - Next task: owner reviews all 8 drafts and marks each approve, edit or reject in `REVIEW.md`.
+
+## 2026-11-17: pilot review (drafts only)
+- Step: built the 11-row pilot review (1 self-test slot and 10 prospects). Skipped the provider and Gmail exercises (input file, export script, CSVs, native import and previews, approval grant): the saved route is Drafts only and none of those tools exists here.
+- Artifact: `PILOT-REVIEW.md`, with draft cohort hash `d74d7b1acb422366…`.
+- Check: 8 drafts written, 2 companies held, 1 self-test not prepared; 0 addresses, 0 CSVs, 0 imports, 0 sends; no approval requested or recorded.
+- Next task: owner reviews the 8 drafts (approve, edit or reject). To run a real pilot, the owner first saves a new route in `SEND-ROUTE.md`.
