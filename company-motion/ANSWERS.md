@@ -8,3 +8,8 @@
 | 2026-11-17 | Permitted countries | Any, except sanctioned countries such as Iran, North Korea, China and similar. A company with an unknown country is held. |
 
 Not yet answered: the full sanctions list to apply (the owner said "etc."). Until it is confirmed, a company in any comprehensively sanctioned jurisdiction (Iran, North Korea, China, Cuba, Syria, Russia, Belarus) is treated as excluded.
+
+| Date | Question | Answer |
+|------|----------|--------|
+| 2026-11-17 | Email signature | Christine Castro / 978-852-7484 |
+| 2026-11-17 | Opt-out line | If this isn't relevant, reply "no thanks" and I won't follow up. |

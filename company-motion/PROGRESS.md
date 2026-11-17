@@ -24,3 +24,9 @@
 - Check: 10 of 10 leaders confirmed in role on an official page. 8 companies included for drafts; 2 held (A Security: conflicting country; Way Security: unknown country); 0 excluded. 0 emails sought or validated. 10 of 10 held for sending. 5 outdated CRM fields recorded.
 - Missing access: ZeroBounce and any sender. Missing lists: opt-outs, bookings, current customers, open deals.
 - Next task: write and source-check the first drafts for the 8 included companies, using only `COMPANY-BRIEF.md` proof points and `ACCOUNTS.json` facts.
+
+## 2026-11-17: first-email drafts
+- Step: wrote one first email for each of the 8 included companies: one sourced relevance reason, the real offer, one permission ask, the owner's opt-out line and signature. No metrics, customer claims or links. No follow-ups or variants.
+- Artifacts: `EMAIL-PREVIEWS.md` and `PROSPECT-DRAFTS.json` (plain text, HTML and a source note for each draft); signature and opt-out saved in `ANSWERS.md`.
+- Check: 8 drafts; 58 to 70 words each before the opt-out and signature; 0 links, tokens or unresolved variables (checked by script); every funding claim tied to an official or trade-press source. 2 companies held (A Security, Way Security). 0 addresses; 0 imported; 0 sent.
+- Next task: owner reviews all 8 drafts and marks each approve, edit or reject in `REVIEW.md`.
