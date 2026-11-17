@@ -4,7 +4,7 @@ Route source: `company-motion/SEND-ROUTE.md` (Drafts only). Sending is held at e
 
 | # | Step | Output | Status 2026-11-17 |
 |---|------|--------|-------------------|
-| 1 | Read company brief, past attempts, exclusions, replies, bookings and opt-outs | Notes in `REVIEW.md` | Blocked: no brief, history or exclusion files in the repo |
+| 1 | Read company brief, past attempts, exclusions, replies, bookings and opt-outs | Notes in `REVIEW.md` | Brief saved (`COMPANY-BRIEF.md`); history and exclusions still missing |
 | 2 | Select current buyers: founders/CEOs of venture-backed cybersecurity companies (ICP from `README.md`) | Candidate list with a source per row | Blocked: no buyer list provided |
 | 3 | Hold anyone unknown, replied, booked or opted out | Held list | Waiting on step 1 |
 | 4 | Write exact messages, each claim tied to a source | `drafts/` with one file per recipient | Waiting on step 2 |
